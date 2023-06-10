@@ -21,21 +21,21 @@ public class UserController {
 
     @PostMapping("/modify")
     public ResponseEntity<String> modifyClass(@RequestBody Map<String, String> payload) {
-
+        String actualClass = null;
         try {
-
 
             String classContent = payload.get("classContent");
             if (classContent == null) {
                 return new ResponseEntity<>("classContent is required", HttpStatus.BAD_REQUEST);
             }
-            String actualClass = dynamicService.fetchFileContentAndPrint();
+            actualClass = dynamicService.fetchFileContentAndPrint(payload);
 
-            String updatedClassContent = classContent; // Update this with the actual updated content
+            return ResponseEntity.ok(actualClass);
 
-        } catch (Exception e){
+        } catch (Exception e) {
             e.printStackTrace();
+            return (ResponseEntity<String>) ResponseEntity.badRequest();
         }
-        return new ResponseEntity<>(HttpStatus.OK);
+
     }
 }
