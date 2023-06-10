@@ -1,10 +1,8 @@
 package com.max.dynamicweb.service;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.gson.*;
 
+import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -13,11 +11,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class DynamicService {
     private final RestTemplate restTemplate = new RestTemplate();
     private final Gson gson = new Gson();
+
+    private final Dotenv dotenv = Dotenv.configure().load();
 
     public String fetchFileContentAndPrint(Map<String, String> payload) {
         String dynamicServiceClass = restTemplate.getForObject(
@@ -38,21 +40,23 @@ public class DynamicService {
 
         JsonObject body = new JsonObject();
         body.addProperty("model", "gpt-4");
-        JsonObject messages = new JsonObject();
-        messages.add("role", gson.toJsonTree("system"));
-        messages.add("content",
-                gson.toJsonTree("This is your class repository, you are Java 17 SpringBoot 3.1.0 and your roleplay as WEBSERVICE: "
-                +"the following class contains the code of your repository and the dependencies of your code(pom.xml), make new changes to the code to meet the user's expectations with the webservice application, generate only a changed class or a new class or method to be added to some class of the repository. Your code :"
+        body.addProperty("max_tokens",1000);
+        body.addProperty("temperature",0);
+
+        JsonArray messages = new JsonArray();
+        JsonObject systemMessage = new JsonObject();
+        systemMessage.addProperty("role", "system");
+        systemMessage.addProperty("content", "This is your class repository, you are Java 17 SpringBoot 3.1.0 and your roleplay as WEBSERVICE: "
+                +"the following class contains the code of your repository and the dependencies of your code(pom.xml), make new changes to the code to meet the user's expectations with the webservice application, You must generate only a changed class or a new class! Your code :"
                 +"MAIN CLASS:\n "
                 + mainClass + " USER CONTROLLER:\n "+  userControllerClass + "SERVICE CLASS:\n"+ dynamicServiceClass + "DEPENDENCIES:\n"+ pomXmlClass+
-                "// REQUIREMENTS: " + payload));
-        body.add("messages", gson.toJsonTree(new JsonObject[]{messages}));
-        body.addProperty("temperature",0.7);
+                "// REQUIREMENTS: " + payload);
+        messages.add(systemMessage);
+        body.add("messages", messages);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-
-        headers.set("Authorization", "Bearer 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");
+        headers.set("Authorization", "Bearer "+ dotenv.get("OPENAI_API_KEY"));
         HttpEntity<String> request = new HttpEntity<>(body.toString(), headers);
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -62,9 +66,36 @@ public class DynamicService {
         );
 
         JsonElement parser = JsonParser.parseString(response.getBody());
-        String generatedText = parser.getAsJsonObject().get("choices").getAsJsonArray().get(0).getAsJsonObject().get("text").getAsString();
+        //JsonElement choicesElement = parser.getAsJsonObject().get("choices");
+        JsonArray choicesArray = parser.getAsJsonObject().get("choices").getAsJsonArray();
 
-        System.out.println(generatedText.trim());
-        return generatedText.trim();
+        // Iterate over the choices array
+        for (JsonElement choiceElement : choicesArray) {
+            // Get the 'message' object
+            JsonElement messageElement = choiceElement.getAsJsonObject().get("message");
+
+            // Get the 'content' string
+            String content = messageElement.getAsJsonObject().get("content").getAsString();
+
+            // Regex pattern to match class information
+            String patternString = "(```java\\n)(.*?)(\\n```)";
+
+            Pattern pattern = Pattern.compile(patternString, Pattern.DOTALL);
+            Matcher matcher = pattern.matcher(content);
+
+            while (matcher.find()) {
+                // Assign the matched group to a String variable
+                String classContent = matcher.group(2).trim();
+
+                // Print the class content
+                System.out.println(classContent);
+            }
+        }
+
+        // Handle the case where the expected "choices" property is not present or not in the expected format
+        System.out.println("Unexpected response from API: " + response.getBody());
+        return null;
+
     }
+
 }
